@@ -108,7 +108,7 @@ Eso concluye el cálculo de la autoatención. El vector resultante es uno que po
 
 ### Cálculo matricial de la autoatención ### 
 
-The first step is to calculate the Query, Key, and Value matrices. We do that by packing our embeddings into a matrix X, and multiplying it by the weight matrices we’ve trained (WQ, WK, WV).  
+El primer paso es calcular las matrices de consulta, clave y valor. Lo hacemos empaquetando nuestras incrustaciones en una matriz X y multiplicándola por las matrices de peso que hemos entrenado (WQ, WK, WV).
 
 ![self-attention-matrix-calculation](https://user-images.githubusercontent.com/95035101/200042342-f99112fb-02a1-4a37-af77-8e0bd851d460.png)
 
@@ -147,4 +147,121 @@ Ahora que hemos tocado las cabezas de atención, revisemos nuestro ejemplo anter
 Sin embargo, si agregamos todas las cabezas de atención a la imagen, las cosas pueden ser más difíciles de interpretar:
 
 ![transformer_self-attention_visualization_3](https://user-images.githubusercontent.com/95035101/200043136-ea036df9-2d3a-4349-852c-e0f82911ddfe.png)
+
+### Representando el Orden de la Secuencia Usando Codificación Posicional ###
+
+Una cosa que falta en el modelo tal como lo hemos descrito hasta ahora es una forma de explicar el orden de las palabras en la secuencia de entrada.  
+
+Para abordar esto, el transformador agrega un vector a cada incorporación de entrada. Estos vectores siguen un patrón específico que aprende el modelo, lo que le ayuda a determinar la posición de cada palabra o la distancia entre diferentes palabras en la secuencia. La intuición aquí es que agregar estos valores a las incrustaciones proporciona distancias significativas entre los vectores de incrustaciones una vez que se proyectan en vectores Q/K/V y durante la atención del producto escalar.  
+
+![transformer_positional_encoding_vectors](https://user-images.githubusercontent.com/95035101/200124528-fb8fbd90-2694-4d9a-a18d-ece8ec03d4c7.png)
+
+Si asumiéramos que la incrustación tiene una dimensionalidad de 4, las codificaciones posicionales reales se verían así:  
+
+![transformer_positional_encoding_example](https://user-images.githubusercontent.com/95035101/200124563-815f33bd-0435-479e-852e-6fc022b1b09b.png)
+
+¿Cómo podría ser este patrón?  
+
+En la siguiente figura, cada fila corresponde a una codificación posicional de un vector. Entonces, la primera fila sería el vector que agregaríamos a la incrustación de la primera palabra en una secuencia de entrada. Cada fila contiene 512 valores, cada uno con un valor entre 1 y -1. Los hemos codificado por colores para que el patrón sea visible.
+
+![transformer_positional_encoding_large_example](https://user-images.githubusercontent.com/95035101/200124607-7f5126c4-1748-4f03-9d00-996bd26b237e.png)
+
+La fórmula para la codificación posicional se describe en el artículo (sección 3.5). Puede ver el código para generar codificaciones posicionales en get_timing_signal_1d(). Este no es el único método posible para la codificación posicional. Sin embargo, ofrece la ventaja de poder escalar a longitudes de secuencias no vistas (por ejemplo, si se le pide a nuestro modelo entrenado que traduzca una oración más larga que cualquiera de las de nuestro conjunto de entrenamiento).  
+
+Actualización de julio de 2020: La codificación posicional que se muestra arriba es de la implementación de Transformerr2Transformer. El método que se muestra en el documento es ligeramente diferente en el sentido de que no concatena directamente, sino que entrelaza las dos señales. La siguiente figura muestra cómo se ve. Aquí está el código para generarlo:  
+
+![attention-is-all-you-need-positional-encoding](https://user-images.githubusercontent.com/95035101/200124663-ebddd912-53e7-4030-8b99-bd0917a7e6e1.png)
+
+### Las residuales ###
+
+Un detalle de la arquitectura del codificador que debemos mencionar antes de continuar es que cada subcapa (autoatención, ffnn) en cada codificador tiene una conexión residual a su alrededor, y va seguida de un paso de normalización de capa.  
+
+![transformer_resideual_layer_norm](https://user-images.githubusercontent.com/95035101/200124726-0d62ad9c-5aae-4f97-9546-a845e93f4e6a.png)
+
+Si vamos a visualizar los vectores y la operación de norma de capa asociada con la atención propia, se vería así:
+
+![transformer_resideual_layer_norm_2](https://user-images.githubusercontent.com/95035101/200124746-54732574-f763-4f82-8785-b1ff6c12c23d.png)
+
+Esto también se aplica a las subcapas del decodificador. Si tuviéramos que pensar en un transformador de 2 codificadores y decodificadores apilados, se vería así:  
+
+### El lado del decodificador ### 
+
+Ahora que hemos cubierto la mayoría de los conceptos en el lado del codificador, básicamente también sabemos cómo funcionan los componentes de los decodificadores. Pero echemos un vistazo a cómo funcionan juntos.  
+
+El codificador comienza procesando la secuencia de entrada. La salida del codificador superior se transforma luego en un conjunto de vectores de atención K y V. Estos deben ser utilizados por cada decodificador en su capa de "atención codificador-decodificador" que ayuda al decodificador a enfocarse en los lugares apropiados en la secuencia de entrada:  
+
+![transformer_decoding_1](https://user-images.githubusercontent.com/95035101/200124824-75bd0e1f-d873-440a-a4f9-79ad58b6de54.gif)
+
+Los siguientes pasos repiten el proceso hasta que se alcanza un símbolo especial que indica que el decodificador del transformador ha completado su salida. La salida de cada paso se alimenta al decodificador inferior en el siguiente paso de tiempo, y los decodificadores aumentan sus resultados de decodificación al igual que lo hicieron los codificadores. Y tal como hicimos con las entradas del codificador, incrustamos y agregamos codificación posicional a esas entradas del decodificador para indicar la posición de cada palabra.  
+
+![transformer_decoding_2](https://user-images.githubusercontent.com/95035101/200124853-9bba67bf-8139-4300-b369-cee8b90f6fc7.gif)
+
+Las capas de autoatención en el decodificador funcionan de una manera ligeramente diferente a la del codificador:  
+
+En el decodificador, la capa de autoatención solo puede atender posiciones anteriores en la secuencia de salida. Esto se hace enmascarando posiciones futuras (configurándolas en -inf) antes del paso softmax en el cálculo de autoatención.  
+
+La capa de "Atención de codificador-descodificador" funciona como la autoatención de varios encabezados, excepto que crea su matriz de consultas a partir de la capa debajo de ella y toma la matriz de claves y valores de la salida de la pila del codificador.  
+
+### La capa final lineal y Softmax ### 
+
+La pila del decodificador genera un vector de flotadores. ¿Cómo convertimos eso en una palabra? Ese es el trabajo de la capa lineal final, seguida de una capa Softmax.
+
+La capa lineal es una red neuronal simple totalmente conectada que proyecta el vector producido por la pila de decodificadores en un vector mucho, mucho más grande llamado vector logits.  
+
+Supongamos que nuestro modelo conoce 10 000 palabras únicas en inglés (el "vocabulario de salida" de nuestro modelo) que aprendió de su conjunto de datos de entrenamiento. Esto haría que el vector logits tuviera 10 000 celdas de ancho, cada celda correspondiente a la puntuación de una palabra única. Así es como interpretamos la salida del modelo seguido de la capa Lineal.  
+
+La capa softmax luego convierte esos puntajes en probabilidades (todos positivos, todos suman 1.0). Se elige la celda con la probabilidad más alta y la palabra asociada a ella se produce como salida para este paso de tiempo.  
+
+![transformer_decoder_output_softmax](https://user-images.githubusercontent.com/95035101/200125702-771379e2-db84-473b-8dcd-bb1145bfab26.png)
+
+### Resumen de entrenamiento ###
+
+Ahora que hemos cubierto todo el proceso de pase hacia adelante a través de un Transformador entrenado, sería útil echar un vistazo a la intuición de entrenar el modelo.  
+
+Durante el entrenamiento, un modelo no entrenado pasaría exactamente por el mismo pase hacia adelante. Pero dado que lo estamos entrenando en un conjunto de datos de entrenamiento etiquetado, podemos comparar su salida con la salida correcta real.  
+
+Para visualizar esto, supongamos que nuestro vocabulario de salida solo contiene seis palabras ("a", "soy", "i", "gracias", "estudiante" y "<eos>" (abreviatura de 'fin de oración')) .  
+
+![vocabulary](https://user-images.githubusercontent.com/95035101/200125771-e4a5fd80-4e10-4afc-b5b7-e3f5f93c2067.png)
+
+Once we define our output vocabulary, we can use a vector of the same width to indicate each word in our vocabulary. This also known as one-hot encoding. So for example, we can indicate the word “am” using the following vector:
+
+![one-hot-vocabulary-example](https://user-images.githubusercontent.com/95035101/200125800-0ed5d0f9-026c-4979-83a3-3445091f08bd.png)
+
+Después de este resumen, analicemos la función de pérdida del modelo: la métrica que estamos optimizando durante la fase de entrenamiento para conducir a un modelo entrenado y, con suerte, asombrosamente preciso.  
+
+### La función de pérdida ###
+
+Digamos que estamos entrenando a nuestro modelo. Digamos que es nuestro primer paso en la fase de entrenamiento, y lo estamos entrenando en un ejemplo simple: traducir "merci" en "gracias".  
+
+Lo que esto significa es que queremos que el resultado sea una distribución de probabilidad que indique la palabra "gracias". Pero dado que este modelo aún no está capacitado, es poco probable que eso suceda todavía.  
+
+![transformer_logits_output_and_label](https://user-images.githubusercontent.com/95035101/200125830-8ed4368b-1f19-4aff-b776-b45ca0e8648b.png)
+
+¿Cómo se comparan dos distribuciones de probabilidad? Simplemente restamos uno del otro. Para obtener más detalles, observe la entropía cruzada y la divergencia Kullback-Leibler.
+
+Pero tenga en cuenta que este es un ejemplo demasiado simplificado. De manera más realista, usaremos una oración de más de una palabra. Por ejemplo, entrada: "je suis étudiant" y salida esperada: "soy un estudiante". Lo que esto realmente significa es que queremos que nuestro modelo genere sucesivamente distribuciones de probabilidad donde:
+
+* Cada distribución de probabilidad está representada por un vector de ancho vocab_size (6 en nuestro ejemplo de juguete, pero de manera más realista, un número como 30,000 o 50,000)  
+* La primera distribución de probabilidad tiene la probabilidad más alta en la celda asociada con la palabra "i"  
+* La segunda distribución de probabilidad tiene la probabilidad más alta en la celda asociada con la palabra "soy".  
+* Y así sucesivamente, hasta que la quinta distribución de salida indique el símbolo '<fin de oración>', que también tiene una celda asociada del vocabulario de 10,000 elementos.  
+
+![output_target_probability_distributions](https://user-images.githubusercontent.com/95035101/200125881-d5721a61-4853-4cc2-b883-e91566a50a81.png)
+
+Después de entrenar el modelo durante suficiente tiempo en un conjunto de datos lo suficientemente grande, esperamos que las distribuciones de probabilidad producidas se vean así:
+
+![output_trained_model_probability_distributions](https://user-images.githubusercontent.com/95035101/200125893-4d3821f5-e190-4579-9a46-ddbb4493d97e.png)
+
+Ahora, debido a que el modelo produce los resultados uno a la vez, podemos suponer que el modelo selecciona la palabra con la probabilidad más alta de esa distribución de probabilidad y desecha el resto. Esa es una forma de hacerlo (llamada decodificación codiciosa). Otra forma de hacerlo sería mantener, por ejemplo, las dos palabras principales (por ejemplo, 'I' y 'a'), luego, en el siguiente paso, ejecutar el modelo dos veces: una vez suponiendo que la primera posición de salida era la palabra 'I', y otra vez asumiendo que la primera posición de salida fue la palabra 'a', y se mantiene la versión que produjo menos error considerando ambas posiciones #1 y #2. Repetimos esto para las posiciones #2 y #3…etc. Este método se llama "búsqueda de vigas", donde en nuestro ejemplo, beam_size era dos (lo que significa que en todo momento, dos hipótesis parciales (traducciones sin terminar) se mantienen en la memoria), y top_beams también es dos (lo que significa que devolveremos dos traducciones ). Ambos son hiperparámetros con los que puede experimentar.  
+
+
+
+
+
+
+
+
+
+
 
