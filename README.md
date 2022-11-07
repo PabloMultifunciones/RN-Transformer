@@ -224,7 +224,7 @@ Para visualizar esto, supongamos que nuestro vocabulario de salida solo contiene
 
 ![vocabulary](https://user-images.githubusercontent.com/95035101/200125771-e4a5fd80-4e10-4afc-b5b7-e3f5f93c2067.png)
 
-Once we define our output vocabulary, we can use a vector of the same width to indicate each word in our vocabulary. This also known as one-hot encoding. So for example, we can indicate the word “am” using the following vector:
+Una vez que definimos nuestro vocabulario de salida, podemos usar un vector del mismo ancho para indicar cada palabra en nuestro vocabulario. Esto también se conoce como codificación one-hot. Entonces, por ejemplo, podemos indicar la palabra "am" usando el siguiente vector:
 
 ![one-hot-vocabulary-example](https://user-images.githubusercontent.com/95035101/200125800-0ed5d0f9-026c-4979-83a3-3445091f08bd.png)
 
